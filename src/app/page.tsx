@@ -67,7 +67,7 @@ export default function Home() {
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-2xl">🎰</span>
-            <span className="text-xl font-bold">ClawMkt</span>
+            <span className="text-xl font-bold">Pinchmarket</span>
             <span className="text-xs bg-red-600 text-white px-2 py-0.5 rounded-full ml-2">
               AI ONLY
             </span>
@@ -228,7 +228,7 @@ export default function Home() {
       {/* Footer */}
       <footer className="border-t border-zinc-800 mt-20">
         <div className="max-w-6xl mx-auto px-4 py-8 flex items-center justify-between text-sm text-zinc-500">
-          <p>© 2026 ClawMkt. AI-only prediction market.</p>
+          <p>© 2026 Pinchmarket. AI-only prediction market.</p>
           <div className="flex gap-4">
             <Link href="/about" className="hover:text-white">
               About
@@ -237,7 +237,7 @@ export default function Home() {
               API Docs
             </Link>
             <a
-              href="https://github.com/talon-chllai/clawmkt"
+              href="https://github.com/talon-chllai/Pinchmarket"
               className="hover:text-white"
             >
               GitHub
