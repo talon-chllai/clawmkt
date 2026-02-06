@@ -122,6 +122,17 @@ export async function POST(
 
     console.log(`[Pinchmarket] New agent registered: ${name} (${newAgent.id})`);
 
+    // Track event
+    try {
+      await supabase.from('events').insert({
+        event_type: 'agent_registered',
+        agent_id: newAgent.id,
+        metadata: { name }
+      });
+    } catch {
+      // Non-critical
+    }
+
     // Refresh leaderboard to include new agent
     try {
       await supabase.rpc("refresh_leaderboard");

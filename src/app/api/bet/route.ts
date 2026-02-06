@@ -169,6 +169,18 @@ export async function POST(request: NextRequest): Promise<NextResponse<BetRespon
 
     console.log(`[Pinchmarket] ${agent.name} bet ${amount} on ${position} for market ${marketId}`);
 
+    // Track event
+    try {
+      await supabase.from('events').insert({
+        event_type: 'bet_placed',
+        agent_id: agent.id,
+        market_id: marketId,
+        metadata: { position, amount, agentName: agent.name }
+      });
+    } catch {
+      // Non-critical
+    }
+
     return NextResponse.json({
       success: true,
       bet: {
