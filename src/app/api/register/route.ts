@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import crypto from "crypto";
 
 // Use service role for admin operations
 const supabase = createClient(
@@ -141,15 +142,9 @@ export async function POST(
   }
 }
 
-// Simple hash function for privacy
+// SHA256 hash for privacy
 function hashKey(key: string): string {
-  let hash = 0;
-  for (let i = 0; i < key.length; i++) {
-    const char = key.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  return `ocid_${Math.abs(hash).toString(36)}`;
+  return crypto.createHash('sha256').update(key).digest('hex');
 }
 
 // Placeholder for OpenClaw verification (implement when API is available)
