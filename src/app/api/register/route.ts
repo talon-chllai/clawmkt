@@ -1,9 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+
+// Use service role for admin operations
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 interface RegisterRequest {
   name: string;
   openclawKey: string;
   moltbookHandle?: string;
+  avatarUrl?: string;
 }
 
 interface RegisterResponse {
@@ -12,15 +20,12 @@ interface RegisterResponse {
   error?: string;
 }
 
-// Mock agent store (replace with Supabase in production)
-const registeredAgents = new Map<string, { name: string; balance: number }>();
-
 export async function POST(
   request: NextRequest
 ): Promise<NextResponse<RegisterResponse>> {
   try {
     const body: RegisterRequest = await request.json();
-    const { name, openclawKey, moltbookHandle } = body;
+    const { name, openclawKey, moltbookHandle, avatarUrl } = body;
 
     // Validate required fields
     if (!name || !openclawKey) {
@@ -38,18 +43,22 @@ export async function POST(
       );
     }
 
-    // Validate API key format
-    if (!openclawKey.startsWith("oc_")) {
+    // Validate API key format (accept oc_ prefix or any valid-looking key)
+    if (!openclawKey || openclawKey.length < 10) {
       return NextResponse.json(
         {
           success: false,
-          error: "Invalid API key format. Expected key starting with 'oc_'",
+          error: "Invalid API key format",
         },
         { status: 400 }
       );
     }
 
-    // TODO: Verify API key with OpenClaw
+    // Extract a unique identifier from the key (hash it for privacy)
+    const openclawId = hashKey(openclawKey);
+
+    // TODO: Verify API key with OpenClaw API when available
+    // For now, we trust the format validation
     // const verificationResult = await verifyOpenClawKey(openclawKey);
     // if (!verificationResult.valid) {
     //   return NextResponse.json(
@@ -58,40 +67,73 @@ export async function POST(
     //   );
     // }
 
-    // Check if agent already registered
-    if (registeredAgents.has(openclawKey)) {
+    // Check if agent already registered by openclaw_id
+    const { data: existing } = await supabase
+      .from("agents")
+      .select("id, name")
+      .eq("openclaw_id", openclawId)
+      .single();
+
+    if (existing) {
       return NextResponse.json(
-        { success: false, error: "This AI agent is already registered" },
+        { 
+          success: false, 
+          error: `This AI agent is already registered as "${existing.name}"` 
+        },
+        { status: 409 }
+      );
+    }
+
+    // Check if name is taken
+    const { data: nameTaken } = await supabase
+      .from("agents")
+      .select("id")
+      .ilike("name", name)
+      .single();
+
+    if (nameTaken) {
+      return NextResponse.json(
+        { success: false, error: "This name is already taken" },
         { status: 409 }
       );
     }
 
     // Register the agent
-    const agentId = `agent_${Date.now()}_${Math.random()
-      .toString(36)
-      .substr(2, 9)}`;
+    const { data: newAgent, error: insertError } = await supabase
+      .from("agents")
+      .insert({
+        name,
+        openclaw_id: openclawId,
+        moltbook_handle: moltbookHandle || null,
+        avatar_url: avatarUrl || null,
+        balance: 1000, // Starting balance
+      })
+      .select()
+      .single();
 
-    registeredAgents.set(openclawKey, {
-      name,
-      balance: 1000, // Starting balance
-    });
+    if (insertError) {
+      console.error("[Pinchmarket] Registration insert error:", insertError);
+      return NextResponse.json(
+        { success: false, error: "Failed to register agent" },
+        { status: 500 }
+      );
+    }
 
-    // TODO: Save to Supabase
-    // await supabase.from('agents').insert({
-    //   name,
-    //   openclaw_id: extractAgentId(openclawKey),
-    //   moltbook_handle: moltbookHandle,
-    //   balance: 1000,
-    // });
+    console.log(`[Pinchmarket] New agent registered: ${name} (${newAgent.id})`);
 
-    console.log(`[ClawMkt] New agent registered: ${name}`);
+    // Refresh leaderboard to include new agent
+    try {
+      await supabase.rpc("refresh_leaderboard");
+    } catch {
+      // Non-critical, leaderboard will update eventually
+    }
 
     return NextResponse.json({
       success: true,
-      agentId,
+      agentId: newAgent.id,
     });
   } catch (error) {
-    console.error("[ClawMkt] Registration error:", error);
+    console.error("[Pinchmarket] Registration error:", error);
     return NextResponse.json(
       { success: false, error: "Internal server error" },
       { status: 500 }
@@ -99,12 +141,27 @@ export async function POST(
   }
 }
 
-// Placeholder for OpenClaw verification
+// Simple hash function for privacy
+function hashKey(key: string): string {
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) {
+    const char = key.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return `ocid_${Math.abs(hash).toString(36)}`;
+}
+
+// Placeholder for OpenClaw verification (implement when API is available)
 // async function verifyOpenClawKey(key: string): Promise<{ valid: boolean; agentId?: string }> {
-//   const response = await fetch(process.env.OPENCLAW_VERIFICATION_URL!, {
-//     method: 'POST',
-//     headers: { 'Content-Type': 'application/json' },
-//     body: JSON.stringify({ apiKey: key }),
-//   });
-//   return response.json();
+//   try {
+//     const response = await fetch(process.env.OPENCLAW_VERIFICATION_URL!, {
+//       method: 'POST',
+//       headers: { 'Content-Type': 'application/json' },
+//       body: JSON.stringify({ apiKey: key }),
+//     });
+//     return response.json();
+//   } catch {
+//     return { valid: false };
+//   }
 // }

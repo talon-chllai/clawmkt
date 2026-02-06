@@ -30,49 +30,73 @@ export default function MarketsPage() {
   const [sortBy, setSortBy] = useState<"volume" | "ending" | "aiCount">("volume");
   const [markets, setMarkets] = useState<MarketWithOdds[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isLive, setIsLive] = useState(false);
+
+  const fetchAndProcessMarkets = async () => {
+    try {
+      // Fetch markets
+      const { data: marketsData, error: marketsError } = await supabase
+        .from("markets")
+        .select("*")
+        .order("total_volume", { ascending: false });
+
+      if (marketsError) throw marketsError;
+
+      // Fetch positions to calculate odds and AI count
+      const { data: positionsData, error: positionsError } = await supabase
+        .from("positions")
+        .select("market_id, position, amount, agent_id");
+
+      if (positionsError) throw positionsError;
+
+      // Calculate odds for each market
+      const marketsWithOdds: MarketWithOdds[] = (marketsData || []).map((market: Market) => {
+        const marketPositions = positionsData?.filter(p => p.market_id === market.id) || [];
+        const yesTotal = marketPositions.filter(p => p.position === "yes").reduce((sum, p) => sum + p.amount, 0);
+        const noTotal = marketPositions.filter(p => p.position === "no").reduce((sum, p) => sum + p.amount, 0);
+        const total = yesTotal + noTotal;
+        const uniqueAgents = new Set(marketPositions.map(p => p.agent_id)).size;
+
+        return {
+          ...market,
+          yesOdds: total > 0 ? Math.round((noTotal / total) * 100) : 50,
+          aiCount: uniqueAgents,
+        };
+      });
+
+      setMarkets(marketsWithOdds);
+    } catch (err) {
+      console.error("Error fetching markets:", err);
+    }
+  };
 
   useEffect(() => {
-    async function fetchMarkets() {
-      try {
-        // Fetch markets
-        const { data: marketsData, error: marketsError } = await supabase
-          .from("markets")
-          .select("*")
-          .order("total_volume", { ascending: false });
-
-        if (marketsError) throw marketsError;
-
-        // Fetch positions to calculate odds and AI count
-        const { data: positionsData, error: positionsError } = await supabase
-          .from("positions")
-          .select("market_id, position, amount, agent_id");
-
-        if (positionsError) throw positionsError;
-
-        // Calculate odds for each market
-        const marketsWithOdds: MarketWithOdds[] = (marketsData || []).map((market: Market) => {
-          const marketPositions = positionsData?.filter(p => p.market_id === market.id) || [];
-          const yesTotal = marketPositions.filter(p => p.position === "yes").reduce((sum, p) => sum + p.amount, 0);
-          const noTotal = marketPositions.filter(p => p.position === "no").reduce((sum, p) => sum + p.amount, 0);
-          const total = yesTotal + noTotal;
-          const uniqueAgents = new Set(marketPositions.map(p => p.agent_id)).size;
-
-          return {
-            ...market,
-            yesOdds: total > 0 ? Math.round((noTotal / total) * 100) : 50,
-            aiCount: uniqueAgents,
-          };
-        });
-
-        setMarkets(marketsWithOdds);
-      } catch (err) {
-        console.error("Error fetching markets:", err);
-      } finally {
-        setLoading(false);
-      }
+    async function init() {
+      await fetchAndProcessMarkets();
+      setLoading(false);
     }
+    init();
 
-    fetchMarkets();
+    // Subscribe to real-time updates on markets and positions
+    const marketsChannel = supabase
+      .channel("markets-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "markets" },
+        () => fetchAndProcessMarkets()
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "positions" },
+        () => fetchAndProcessMarkets()
+      )
+      .subscribe((status) => {
+        setIsLive(status === "SUBSCRIBED");
+      });
+
+    return () => {
+      supabase.removeChannel(marketsChannel);
+    };
   }, []);
 
   const filteredMarkets = markets.filter(
@@ -115,7 +139,15 @@ export default function MarketsPage() {
 
       <main className="max-w-6xl mx-auto px-4 py-8">
         <div className="flex items-center justify-between mb-8">
-          <h1 className="text-3xl font-bold">All Markets</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-bold">All Markets</h1>
+            {isLive && (
+              <span className="flex items-center gap-1.5 text-xs bg-green-900/50 text-green-400 px-2 py-1 rounded-full border border-green-800">
+                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                LIVE
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-4">
             <select
               value={sortBy}
