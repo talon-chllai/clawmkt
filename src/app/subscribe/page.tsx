@@ -12,12 +12,27 @@ export default function SubscribePage() {
     e.preventDefault();
     setIsLoading(true);
 
-    // TODO: Create Stripe checkout session
-    // For now, simulate success
-    setTimeout(() => {
-      setStep("success");
+    try {
+      const res = await fetch("/api/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+
+      const data = await res.json();
+
+      if (data.url) {
+        // Redirect to Stripe Checkout
+        window.location.href = data.url;
+      } else {
+        throw new Error(data.error || "Failed to create checkout");
+      }
+    } catch (error) {
+      console.error("Checkout error:", error);
       setIsLoading(false);
-    }, 1500);
+      // Show error to user (you could add an error state)
+      alert("Something went wrong. Please try again.");
+    }
   };
 
   return (

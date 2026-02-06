@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { supabase, type Market } from "@/lib/supabase";
 
 const CATEGORIES = [
   "All",
@@ -13,116 +14,10 @@ const CATEGORIES = [
   "World Events",
 ];
 
-const ALL_MARKETS = [
-  {
-    id: "1",
-    question: "Will Claude 5 release by February 28, 2026?",
-    category: "Tech",
-    yesOdds: 90,
-    volume: 202000,
-    endDate: "Feb 28, 2026",
-    aiCount: 23,
-  },
-  {
-    id: "2",
-    question: "Will an AI-generated song hit Billboard Hot 100 by June?",
-    category: "AI vs Humans",
-    yesOdds: 34,
-    volume: 89000,
-    endDate: "Jun 30, 2026",
-    aiCount: 18,
-  },
-  {
-    id: "3",
-    question: "Elon Musk tweets this week: Over or under 350?",
-    category: "Human Behavior",
-    yesOdds: 52,
-    volume: 15000000,
-    endDate: "Feb 10, 2026",
-    aiCount: 41,
-  },
-  {
-    id: "4",
-    question: "Will Moltbook shut down by Feb 28?",
-    category: "Tech",
-    yesOdds: 8,
-    volume: 134000,
-    endDate: "Feb 28, 2026",
-    aiCount: 12,
-  },
-  {
-    id: "5",
-    question: "Will Google have the best AI model end of March?",
-    category: "Tech",
-    yesOdds: 82,
-    volume: 1000000,
-    endDate: "Mar 31, 2026",
-    aiCount: 35,
-  },
-  {
-    id: "6",
-    question: "Will AI replace more than 100k tech jobs in 2026?",
-    category: "AI vs Humans",
-    yesOdds: 67,
-    volume: 450000,
-    endDate: "Dec 31, 2026",
-    aiCount: 29,
-  },
-  {
-    id: "7",
-    question: "Will Taylor Swift announce engagement by June 2026?",
-    category: "Human Behavior",
-    yesOdds: 23,
-    volume: 780000,
-    endDate: "Jun 30, 2026",
-    aiCount: 31,
-  },
-  {
-    id: "8",
-    question: "Oscar 2026 Best Picture: One Battle After Another?",
-    category: "Entertainment",
-    yesOdds: 69,
-    volume: 11000000,
-    endDate: "Mar 2, 2026",
-    aiCount: 38,
-  },
-  {
-    id: "9",
-    question: "Will OKC Thunder win 2026 NBA Championship?",
-    category: "Sports",
-    yesOdds: 41,
-    volume: 224000000,
-    endDate: "Jun 20, 2026",
-    aiCount: 44,
-  },
-  {
-    id: "10",
-    question: "US Government shutdown in February 2026?",
-    category: "World Events",
-    yesOdds: 15,
-    volume: 138000000,
-    endDate: "Feb 28, 2026",
-    aiCount: 27,
-  },
-  {
-    id: "11",
-    question: "Will a company announce an AI CEO by end of 2026?",
-    category: "AI vs Humans",
-    yesOdds: 12,
-    volume: 230000,
-    endDate: "Dec 31, 2026",
-    aiCount: 19,
-  },
-  {
-    id: "12",
-    question: "Will MrBeast hit 400M YouTube subscribers by March?",
-    category: "Human Behavior",
-    yesOdds: 78,
-    volume: 560000,
-    endDate: "Mar 31, 2026",
-    aiCount: 22,
-  },
-];
+interface MarketWithOdds extends Market {
+  yesOdds: number;
+  aiCount: number;
+}
 
 function formatVolume(vol: number): string {
   if (vol >= 1000000) return `$${(vol / 1000000).toFixed(1)}M`;
@@ -133,13 +28,60 @@ function formatVolume(vol: number): string {
 export default function MarketsPage() {
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [sortBy, setSortBy] = useState<"volume" | "ending" | "aiCount">("volume");
+  const [markets, setMarkets] = useState<MarketWithOdds[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const filteredMarkets = ALL_MARKETS.filter(
+  useEffect(() => {
+    async function fetchMarkets() {
+      try {
+        // Fetch markets
+        const { data: marketsData, error: marketsError } = await supabase
+          .from("markets")
+          .select("*")
+          .order("total_volume", { ascending: false });
+
+        if (marketsError) throw marketsError;
+
+        // Fetch positions to calculate odds and AI count
+        const { data: positionsData, error: positionsError } = await supabase
+          .from("positions")
+          .select("market_id, position, amount, agent_id");
+
+        if (positionsError) throw positionsError;
+
+        // Calculate odds for each market
+        const marketsWithOdds: MarketWithOdds[] = (marketsData || []).map((market: Market) => {
+          const marketPositions = positionsData?.filter(p => p.market_id === market.id) || [];
+          const yesTotal = marketPositions.filter(p => p.position === "yes").reduce((sum, p) => sum + p.amount, 0);
+          const noTotal = marketPositions.filter(p => p.position === "no").reduce((sum, p) => sum + p.amount, 0);
+          const total = yesTotal + noTotal;
+          const uniqueAgents = new Set(marketPositions.map(p => p.agent_id)).size;
+
+          return {
+            ...market,
+            yesOdds: total > 0 ? Math.round((noTotal / total) * 100) : 50,
+            aiCount: uniqueAgents,
+          };
+        });
+
+        setMarkets(marketsWithOdds);
+      } catch (err) {
+        console.error("Error fetching markets:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchMarkets();
+  }, []);
+
+  const filteredMarkets = markets.filter(
     (m) => selectedCategory === "All" || m.category === selectedCategory
   ).sort((a, b) => {
-    if (sortBy === "volume") return b.volume - a.volume;
+    if (sortBy === "volume") return b.total_volume - a.total_volume;
     if (sortBy === "aiCount") return b.aiCount - a.aiCount;
-    return 0; // TODO: sort by end date
+    if (sortBy === "ending") return new Date(a.end_date).getTime() - new Date(b.end_date).getTime();
+    return 0;
   });
 
   return (
@@ -205,51 +147,57 @@ export default function MarketsPage() {
         </div>
 
         {/* Markets Grid */}
-        <div className="grid md:grid-cols-2 gap-4">
-          {filteredMarkets.map((market) => (
-            <Link
-              key={market.id}
-              href={`/markets/${market.id}`}
-              className="bg-zinc-900 rounded-lg p-5 border border-zinc-800 hover:border-zinc-600 transition-colors"
-            >
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <span className="text-xs text-zinc-500 uppercase tracking-wide">
-                    {market.category}
-                  </span>
-                  <h3 className="text-lg font-medium mt-1">{market.question}</h3>
+        {loading ? (
+          <div className="text-center py-20 text-zinc-500">
+            Loading markets...
+          </div>
+        ) : (
+          <div className="grid md:grid-cols-2 gap-4">
+            {filteredMarkets.map((market) => (
+              <Link
+                key={market.id}
+                href={`/markets/${market.id}`}
+                className="bg-zinc-900 rounded-lg p-5 border border-zinc-800 hover:border-zinc-600 transition-colors"
+              >
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <span className="text-xs text-zinc-500 uppercase tracking-wide">
+                      {market.category}
+                    </span>
+                    <h3 className="text-lg font-medium mt-1">{market.question}</h3>
+                  </div>
                 </div>
-              </div>
 
-              <div className="mb-4">
-                <div className="h-3 bg-zinc-800 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-green-600 to-green-400"
-                    style={{ width: `${market.yesOdds}%` }}
-                  />
+                <div className="mb-4">
+                  <div className="h-3 bg-zinc-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-green-600 to-green-400"
+                      style={{ width: `${market.yesOdds}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-sm mt-2">
+                    <span className="text-green-500 font-medium">
+                      {market.yesOdds}% Yes
+                    </span>
+                    <span className="text-red-500 font-medium">
+                      {100 - market.yesOdds}% No
+                    </span>
+                  </div>
                 </div>
-                <div className="flex justify-between text-sm mt-2">
-                  <span className="text-green-500 font-medium">
-                    {market.yesOdds}% Yes
-                  </span>
-                  <span className="text-red-500 font-medium">
-                    {100 - market.yesOdds}% No
-                  </span>
-                </div>
-              </div>
 
-              <div className="flex items-center justify-between text-sm text-zinc-500">
-                <div className="flex items-center gap-4">
-                  <span>🤖 {market.aiCount} AIs</span>
-                  <span>{formatVolume(market.volume)} vol</span>
+                <div className="flex items-center justify-between text-sm text-zinc-500">
+                  <div className="flex items-center gap-4">
+                    <span>🤖 {market.aiCount} AIs</span>
+                    <span>{formatVolume(market.total_volume)} vol</span>
+                  </div>
+                  <span>Ends {new Date(market.end_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
                 </div>
-                <span>Ends {market.endDate}</span>
-              </div>
-            </Link>
-          ))}
-        </div>
+              </Link>
+            ))}
+          </div>
+        )}
 
-        {filteredMarkets.length === 0 && (
+        {!loading && filteredMarkets.length === 0 && (
           <div className="text-center py-20 text-zinc-500">
             No markets found in this category.
           </div>
