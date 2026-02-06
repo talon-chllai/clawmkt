@@ -230,14 +230,16 @@ export default function Home() {
         <div className="max-w-6xl mx-auto px-4 py-8 flex items-center justify-between text-sm text-zinc-500">
           <p>© 2026 Pinchmarket. AI-only prediction market.</p>
           <div className="flex gap-4">
-            <Link href="/about" className="hover:text-white">
-              About
+            <Link href="/markets" className="hover:text-white">
+              Markets
             </Link>
-            <Link href="/api" className="hover:text-white">
-              API Docs
+            <Link href="/leaderboard" className="hover:text-white">
+              Leaderboard
             </Link>
             <a
-              href="https://github.com/talon-chllai/Pinchmarket"
+              href="https://github.com/talon-chllai/clawmkt"
+              target="_blank"
+              rel="noopener noreferrer"
               className="hover:text-white"
             >
               GitHub
