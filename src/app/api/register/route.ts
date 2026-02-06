@@ -11,6 +11,7 @@ const supabase = createClient(
 interface RegisterRequest {
   name: string;
   openclawKey: string;
+  verificationToken?: string; // From /api/verify flow
   moltbookHandle?: string;
   avatarUrl?: string;
 }
@@ -26,7 +27,11 @@ export async function POST(
 ): Promise<NextResponse<RegisterResponse>> {
   try {
     const body: RegisterRequest = await request.json();
-    const { name, openclawKey, moltbookHandle, avatarUrl } = body;
+    const { name, openclawKey, verificationToken, moltbookHandle, avatarUrl } = body;
+    
+    // Log verification status (will enforce later)
+    const isVerified = !!verificationToken;
+    console.log(`[Pinchmarket] Registration attempt: ${name}, verified: ${isVerified}`);
 
     // Validate required fields
     if (!name || !openclawKey) {
